@@ -32,8 +32,18 @@ HEADERS = {
 
 # Categorias Reais do Yupoo que contêm os Produtos (Camisetas)
 SHIRT_CATEGORIES = [
+    {"id": "3328585", "name": "National Team", "type": "Torcedor"},
+    {"id": "3327085", "name": "Other Leagues", "type": "Torcedor"},
+    {"id": "3878608", "name": "Brazilian Serie A", "type": "Torcedor"},
+    {"id": "3879265", "name": "Premier League", "type": "Torcedor"},
+    {"id": "3879374", "name": "La Liga", "type": "Torcedor"},
+    {"id": "3879491", "name": "Serie A", "type": "Torcedor"},
+    {"id": "3879521", "name": "Bundesliga", "type": "Torcedor"},
+    {"id": "3879532", "name": "French Ligue", "type": "Torcedor"},
+    {"id": "3759692", "name": "Liga MX", "type": "Torcedor"},
+    {"id": "3847101", "name": "Chilean League", "type": "Torcedor"},
     {"id": "3326990", "name": "New mode (Fans Version)", "type": "Torcedor"},
-    {"id": "3328487", "name": "Player version",          "type": "Performance"},
+    {"id": "3328487", "name": "Player version",          "type": "Jogador"},
     {"id": "3327198", "name": "Retro Football Jersey",   "type": "Retrô"},
 ]
 
@@ -44,7 +54,9 @@ LEAGUE_FOLDERS = {
     "laliga": "LaLiga",
     "serie_a": "SerieA",
     "bundesliga": "Bundesliga",
-    "ligue_1": "Ligue1"
+    "ligue_1": "Ligue1",
+    "selecoes": "Selecoes",
+    "outros": "OutrosClubes"
 }
 
 # ─── Helper: Limpeza de nomes para pastas válidas no Windows ──────────────────
@@ -90,20 +102,36 @@ def extract_price(name: str) -> str:
             return m.group(1).replace('.', ',')
     return "349,90" # Preço padrão premium do dalla.html
 
-# ─── Helper: Carregar times do dalla.html para mapear corretamente ───────────
-def load_teams_mapping() -> dict:
+# ─── Helper: Carregar times que já possuem produtos ────────────────────────
+def load_existing_teams() -> set:
+    existing = set()
+    if os.path.exists(PRODUCTS_JS_FILE):
+        with open(PRODUCTS_JS_FILE, "r", encoding="utf-8") as f:
+            content = f.read()
+            match = re.search(r'window\.PRODUCTS = (\[.*?\]);', content, re.DOTALL)
+            if match:
+                try:
+                    prods = json.loads(match.group(1))
+                    for p in prods:
+                        existing.add(p.get("teamId"))
+                except:
+                    pass
+    return existing
+
+# ─── Helper: Carregar times do teste_1.html para mapear corretamente ───────────
+def load_teams_mapping(existing_teams: set) -> dict:
     teams_map = {} # league_id -> [ {id, name, keywords} ]
     
-    if not os.path.exists("dalla.html"):
-        print("[ERRO] dalla.html não encontrado no diretório!")
+    if not os.path.exists("teste_1.html"):
+        print("[ERRO] teste_1.html não encontrado no diretório!")
         return {}
 
-    with open("dalla.html", "r", encoding="utf-8") as f:
+    with open("teste_1.html", "r", encoding="utf-8") as f:
         html = f.read()
 
     start_idx = html.find('const TEAMS = {')
     if start_idx == -1:
-        print("[ERRO] Bloco TEAMS não encontrado no dalla.html")
+        print("[ERRO] Bloco TEAMS não encontrado no teste_1.html")
         return {}
     end_idx = html.find('};', start_idx) + 2
     teams_block = html[start_idx:end_idx]
@@ -166,6 +194,52 @@ def load_teams_mapping() -> dict:
                 keywords.extend(["palmeiras"])
             elif "santos" in clean_name:
                 keywords.extend(["santos"])
+            elif "frança" in clean_name:
+                keywords.extend(["france"])
+            elif "alemanha" in clean_name:
+                keywords.extend(["germany"])
+            elif "espanha" in clean_name:
+                keywords.extend(["spain"])
+            elif "japão" in clean_name:
+                keywords.extend(["japan"])
+            elif "estados unidos" in clean_name or "usa" in clean_name:
+                keywords.extend(["usa", "united states"])
+            elif "inglaterra" in clean_name:
+                keywords.extend(["england"])
+            elif "itália" in clean_name:
+                keywords.extend(["italy"])
+            elif "holanda" in clean_name:
+                keywords.extend(["netherlands", "holland"])
+            elif "suécia" in clean_name:
+                keywords.extend(["sweden"])
+            elif "turquia" in clean_name:
+                keywords.extend(["turkey"])
+            elif "marrocos" in clean_name:
+                keywords.extend(["morocco"])
+            elif "áfrica do sul" in clean_name:
+                keywords.extend(["south africa"])
+            elif "paraguai" in clean_name:
+                keywords.extend(["paraguay"])
+            elif "grécia" in clean_name:
+                keywords.extend(["greece"])
+            elif "hungria" in clean_name:
+                keywords.extend(["hungary"])
+            elif "liverpool" in clean_name:
+                keywords.extend(["liverpool", "lfc"])
+            elif "juventus" in clean_name:
+                keywords.extend(["juventus", "juve"])
+            elif "atlético de madrid" in clean_name:
+                keywords.extend(["atletico madrid"])
+            elif "bayer leverkusen" in clean_name:
+                keywords.extend(["leverkusen"])
+            elif "chivas" in clean_name:
+                keywords.extend(["chivas", "guadalajara"])
+            elif "américa" in clean_name and "méxico" in clean_name:
+                keywords.extend(["america", "club america"])
+            elif "olympiacos" in clean_name:
+                keywords.extend(["olympiacos", "olympiakos"])
+            elif "u. de chile" in clean_name or "universidad" in clean_name:
+                keywords.extend(["universidad de chile", "u de chile"])
 
             import unicodedata
             clean_keywords = []
@@ -175,11 +249,13 @@ def load_teams_mapping() -> dict:
                 if kw != clean_kw:
                     clean_keywords.append(kw)
 
-            teams_map[league_id].append({
-                "id": t_id,
-                "name": t_name,
-                "keywords": list(set(clean_keywords))
-            })
+            # Só adiciona no mapa de busca se a equipe ainda não tiver foto no BD
+            if t_id not in existing_teams:
+                teams_map[league_id].append({
+                    "id": t_id,
+                    "name": t_name,
+                    "keywords": list(set(clean_keywords))
+                })
             
     return teams_map
 
@@ -347,26 +423,51 @@ def scrape_shirt_category(category: dict, teams_map: dict) -> list:
 # ─── Execução Principal ──────────────────────────────────────────────────────
 def main():
     print("\n" + "=" * 60)
-    print("   INICIANDO SCRAPER E DOWNLOADER DE CAMISETAS REAIS")
+    print("   INICIANDO SCRAPER E DOWNLOADER DE CAMISETAS REAIS (FALTANTES)")
     print("=" * 60)
     
-    # 1. Carrega times do dalla.html
-    teams_map = load_teams_mapping()
+    # 0. Carrega equipes existentes
+    existing_teams = load_existing_teams()
+    print(f"[INFO] Encontrados {len(existing_teams)} times já cadastrados no products.js.")
+
+    # 1. Carrega times do teste_1.html ignorando os existentes
+    teams_map = load_teams_mapping(existing_teams)
     if not teams_map:
-        print("[ERRO] Não foi possível carregar as informações das ligas/times do HTML.")
+        print("[ERRO] Não foi possível carregar as informações das ligas/times.")
         return
         
-    print("[OK] Mapeamento dos times carregado com sucesso!")
+    times_alvo = sum(len(t) for t in teams_map.values())
+    print(f"[OK] Mapeamento concluído! Procurando fotos para {times_alvo} times pendentes.")
     
     all_scraped_products = []
     
-    # 2. Coleta camisetas de cada uma das 3 grandes categorias de produtos
+    # Carrega base existente para não sobrescrever
+    if os.path.exists(PRODUCTS_JS_FILE):
+        with open(PRODUCTS_JS_FILE, "r", encoding="utf-8") as f:
+            match = re.search(r'window\.PRODUCTS = (\[.*?\]);', f.read(), re.DOTALL)
+            if match:
+                try:
+                    all_scraped_products = json.loads(match.group(1))
+                except:
+                    pass
+    
+    start_len = len(all_scraped_products)
+    
+    # 2. Coleta camisetas das categorias selecionadas
     for category in SHIRT_CATEGORIES:
         products = scrape_shirt_category(category, teams_map)
-        all_scraped_products.extend(products)
-        print(f"\n[OK] Concluído: {len(products)} camisetas reais importadas de {category['name']}.\n")
         
-    # 3. Salva os produtos reais no formato 'products.js' para uso local no 'dalla.html'
+        # Adiciona os produtos novos, começando o id a partir do tamanho total
+        for p in products:
+            p["id"] = f"p_auto_{len(all_scraped_products) + 1}"
+            all_scraped_products.append(p)
+            # Remove o time alvo para não pegar repetido em outra categoria
+            for l_id in teams_map:
+                teams_map[l_id] = [t for t in teams_map[l_id] if t["id"] != p["teamId"]]
+                
+        print(f"\n[OK] Concluído: {len(products)} camisetas novas importadas de {category['name']}.\n")
+        
+    # 3. Salva todos os produtos no formato 'products.js'
     js_content = f"// BANCO DE DADOS DE PRODUTOS GERADO AUTOMATICAMENTE PELO SCRAPER YUPOO\n"
     js_content += f"// Gerado em: {time.strftime('%d/%m/%Y %H:%M:%S')}\n\n"
     js_content += "window.PRODUCTS = " + json.dumps(all_scraped_products, ensure_ascii=False, indent=2) + ";\n"
